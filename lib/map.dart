@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MapSample extends StatefulWidget {
@@ -12,29 +13,55 @@ class MapSample extends StatefulWidget {
 
 class MapSampleState extends State<MapSample> {
   late LatLng _newPosition;
+  late String _address = '';
 
   @override
   void initState() {
     super.initState();
     _newPosition = LatLng(-6.402905, 106.778419);
+    _determinePosition();
   }
 
-  late String _displaytext = "Double tap here";
+  Future<void> _determinePosition() async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final address = await _getAddress(position.latitude, position.longitude);
 
-  void getlocation() async {
-    await Geolocator.checkPermission();
-    await Geolocator.requestPermission();
-    Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
-    final GoogleMapController controller = await _controller.future;
-    controller.animateCamera(
-        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+      final GoogleMapController controller = await _controller.future;
+      controller.animateCamera(
+        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+      );
 
+      setState(() {
+        _newPosition = LatLng(position.latitude, position.longitude);
+        _address = address;
+      });
+    } catch (e) {
+      print('Error getting location: $e');
+    }
+  }
+
+  Future<String> _getAddress(double latitude, double longitude) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(latitude, longitude);
+      if (placemarks.isNotEmpty) {
+        final placemark = placemarks[0];
+        return placemark.toString(); // Anda bisa mengatur format alamat sesuai kebutuhan
+      } else {
+        return 'No address found';
+      }
+    } catch (e) {
+      return 'Error: $e';
+    }
+  }
+
+  Future<void> _updateAddress(LatLng newPosition) async {
+    final address = await _getAddress(newPosition.latitude, newPosition.longitude);
     setState(() {
-      _newPosition = LatLng(position.latitude, position.longitude);
-       _displaytext = "Lat: ${position.latitude}, Lng: ${position.longitude}";
+      _address = address;
     });
-
   }
 
   final Completer<GoogleMapController> _controller =
@@ -48,7 +75,7 @@ class MapSampleState extends State<MapSample> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      body:  Stack(
         children: [
           GoogleMap(
             zoomControlsEnabled: false,
@@ -61,6 +88,7 @@ class MapSampleState extends State<MapSample> {
                   setState(() {
                     _newPosition = newPosition;
                   });
+                  _updateAddress(newPosition); // Perbarui alamat ketika marker di-drag
                 },
               ),
             ]),
@@ -85,7 +113,7 @@ class MapSampleState extends State<MapSample> {
                   Expanded(child: Column(
                     children: [
                       GestureDetector(
-                        onDoubleTap: getlocation,
+                        onDoubleTap: _determinePosition,
                         child: Padding(
                           padding: EdgeInsets.only(top: 30, left: 20, right: 20),
                           child: Container(
@@ -102,7 +130,7 @@ class MapSampleState extends State<MapSample> {
                             ),
                             width: double.maxFinite,
                             height: 50,
-                            child: Text(_displaytext,
+                            child: Text('$_address',
                             style: TextStyle(
                               color: Colors.grey,
                               fontSize: 20,
@@ -122,7 +150,12 @@ class MapSampleState extends State<MapSample> {
           
         ],
       ),
-     
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: () {
+      //     _determinePosition();
+      //   },
+      //   child: Icon(Icons.gps_fixed),
+      // ),
     );
   }
 }
